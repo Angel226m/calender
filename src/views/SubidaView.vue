@@ -46,7 +46,7 @@
               :key="index"
               class="preview-item"
             >
-              <span>{{ archivo.name }} ({{ (archivo.size/1024/1024).toFixed(2) }} MB)</span>
+              <span>{{ archivo.name }} ({{ (archivo.size / 1024 / 1024).toFixed(2) }} MB)</span>
               <button @click.stop="eliminarArchivo(index)" class="btn-delete">
                 <i class="mdi mdi-delete"></i>
               </button>
@@ -99,16 +99,17 @@
 
 <script>
 export default {
+  name: "SubidaView",
   data() {
     return {
       archivos: [],           // Archivos seleccionados para subir
       listadoArchivos: [],    // Archivos consultados desde el backend (ya subidos)
-      carpetas: [],           // Carpetas obtenidas de la BD
+      carpetas: [],           // Carpetas obtenidas de la BD (por usuario)
       nuevaCarpeta: "",
       carpetaSeleccionada: null, // Objeto de carpeta seleccionado (ej. { id, name })
       error: null,
       subiendo: false,
-      // Validación de tipos y tamaño
+      // Tipos permitidos: incluye imágenes, PDF, Word, PowerPoint, Excel, etc.
       tiposPermitidos: [
         "image/png",
         "image/jpeg",
@@ -126,19 +127,28 @@ export default {
     };
   },
   computed: {
-    // Filtra los archivos según la carpeta seleccionada (basado en "archivos/<carpeta>/<nombreArchivo>")
+    // Accede al usuario global desde Vuex
+    user() {
+      return this.$store.state.user;
+    },
+    // Filtra los archivos según la carpeta seleccionada
+    // Dado que la ruta de los archivos es "archivos/{uid}/{carpeta}/{archivo}",
+    // usamos parts[2] para comparar con el nombre de la carpeta
     filesBySelectedFolder() {
       if (!this.carpetaSeleccionada) return [];
-      return this.listadoArchivos.filter(file => {
-        const parts = file.fileName.split('/');
-        const folder = parts[1] || "default";
+      return this.listadoArchivos.filter((file) => {
+        const parts = file.fileName.split("/");
+        const folder = parts[2] || "default";
         return folder === this.carpetaSeleccionada.name;
       });
     },
   },
   mounted() {
-    this.obtenerCarpetas();
-    this.listarArchivos();
+    // Si el usuario está autenticado, consultamos carpetas y archivos
+    if (this.user && this.user.uid) {
+      this.obtenerCarpetas();
+      this.listarArchivos();
+    }
   },
   methods: {
     seleccionarArchivo(event) {
@@ -155,7 +165,7 @@ export default {
     },
     agregarArchivos(files) {
       this.error = null;
-      Array.from(files).forEach(file => {
+      Array.from(files).forEach((file) => {
         if (!this.tiposPermitidos.includes(file.type)) {
           this.error = "❌ Tipo de archivo no permitido.";
           return;
@@ -164,7 +174,7 @@ export default {
           this.error = `❌ ${file.name} supera el límite (${this.maxSizeMB} MB).`;
           return;
         }
-        if (!this.archivos.some(f => f.name === file.name)) {
+        if (!this.archivos.some((f) => f.name === file.name)) {
           this.archivos.push(file);
         }
       });
@@ -172,18 +182,23 @@ export default {
     eliminarArchivo(index) {
       this.archivos.splice(index, 1);
     },
-    // Crea la carpeta mediante POST a /folder
+    // Crea una carpeta enviando también el UID del usuario
     async crearCarpeta() {
       if (!this.nuevaCarpeta.trim()) return;
       const nombre = this.nuevaCarpeta.trim();
+      if (!this.user || !this.user.uid) {
+        alert("❌ Usuario no autenticado.");
+        return;
+      }
       try {
         const response = await fetch("http://localhost:3000/folder", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: nombre }),
+          body: JSON.stringify({ name: nombre, uid: this.user.uid }),
         });
         const result = await response.json();
         if (result.success) {
+          // Solo se agrega la carpeta si pertenece al usuario
           this.carpetas.push(result.data);
           this.nuevaCarpeta = "";
         } else {
@@ -193,10 +208,11 @@ export default {
         this.error = err.message;
       }
     },
-    // Obtiene las carpetas mediante GET a /folders
+    // Obtiene las carpetas solo para el usuario autenticado
     async obtenerCarpetas() {
+      if (!this.user || !this.user.uid) return;
       try {
-        const response = await fetch("http://localhost:3000/folders");
+        const response = await fetch(`http://localhost:3000/folders?uid=${this.user.uid}`);
         const result = await response.json();
         if (result.success) {
           this.carpetas = result.folders;
@@ -212,10 +228,15 @@ export default {
       // Al seleccionar una carpeta, se actualiza la lista de archivos
       this.listarArchivos();
     },
-    // Sube archivos al backend usando la carpeta seleccionada (se envía "carpeta" en el formData)
+    // Sube archivos al backend usando la carpeta seleccionada.
+    // Se envían "carpeta" y el "uid" del usuario en el formData.
     async subirArchivos() {
       if (!this.archivos.length || !this.carpetaSeleccionada) {
         alert("⚠️ Selecciona archivos y una carpeta.");
+        return;
+      }
+      if (!this.user || !this.user.uid) {
+        alert("❌ Usuario no autenticado.");
         return;
       }
       this.subiendo = true;
@@ -223,6 +244,7 @@ export default {
         const formData = new FormData();
         formData.append("archivo", archivo);
         formData.append("carpeta", this.carpetaSeleccionada.name);
+        formData.append("uid", this.user.uid);
         try {
           const response = await fetch("http://localhost:3000/upload", {
             method: "POST",
@@ -232,7 +254,7 @@ export default {
           if (result.success) {
             this.listadoArchivos.push({
               name: archivo.name,
-              fileName: result.data.fileName, // Ejemplo: "archivos/<carpeta>/<nombreArchivo>"
+              fileName: result.data.fileName, // Ejemplo: "archivos/{uid}/{carpeta}/{nombreArchivo}"
               fileId: result.data.fileId,
             });
           } else {
@@ -246,10 +268,11 @@ export default {
       this.archivos = [];
       this.subiendo = false;
     },
-    // Lista archivos mediante GET a /files
+    // Lista los archivos solo del usuario autenticado
     async listarArchivos() {
+      if (!this.user || !this.user.uid) return;
       try {
-        const response = await fetch("http://localhost:3000/files");
+        const response = await fetch(`http://localhost:3000/files?uid=${this.user.uid}`);
         const result = await response.json();
         if (result.success) {
           this.listadoArchivos = result.files;
@@ -260,10 +283,11 @@ export default {
         this.error = err.message;
       }
     },
-    // Descarga archivo solicitando URL firmada en /download
+    // Descarga archivo solicitando URL firmada en /download (incluye uid para verificación)
     async descargarArchivo(file) {
+      if (!this.user || !this.user.uid) return;
       try {
-        const response = await fetch(`http://localhost:3000/download?fileName=${encodeURIComponent(file.fileName)}`);
+        const response = await fetch(`http://localhost:3000/download?fileName=${encodeURIComponent(file.fileName)}&uid=${this.user.uid}`);
         const result = await response.json();
         if (result.success) {
           window.open(result.signedUrl, "_blank");
@@ -293,6 +317,7 @@ export default {
   },
 };
 </script>
+
 
 <style scoped>
 /* Distribución en dos columnas: sidebar y contenido principal */

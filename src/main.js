@@ -15,7 +15,7 @@ new Vue({
 */
 
 
-
+/*  ultimo
 import Vue from "vue";
 import App from "./App.vue";
 import vuetify from "./plugins/vuetify";
@@ -27,6 +27,26 @@ Vue.config.productionTip = false;
 new Vue({
   vuetify,
   router,
+  render: (h) => h(App),
+}).$mount("#app");
+
+export { db };
+*/
+
+
+import Vue from "vue";
+import App from "./App.vue";
+import vuetify from "./plugins/vuetify";
+import router from "./router";
+import store from "./store"; // Importa el store de Vuex
+import { db } from "./services/firebase"; // ✅ Solo importa lo que realmente usas
+
+Vue.config.productionTip = false;
+
+new Vue({
+  vuetify,
+  router,
+  store, // Agrega el store aquí para tener estado global
   render: (h) => h(App),
 }).$mount("#app");
 

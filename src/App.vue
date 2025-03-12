@@ -92,19 +92,24 @@ export default {
   name: "App",
   data() {
     return {
-      user: null,
       error: "",
       loadingGoogle: false,
-      userRole: "Estudiante", // Puedes actualizarlo según tus datos
+      userRole: "Estudiante",
       menuItems: [
         { title: "Inicio", icon: "mdi-view-dashboard", route: "/" },
         { title: "Calendario", icon: "mdi-calendar-clock", route: "/calendario" },
         { title: "Subida de Archivos", icon: "mdi-folder-upload", route: "/subida" },
         { title: "Notas", icon: "mdi-note-multiple", route: "/notas" },
-        { title: "Informes", icon: "mdi-chart-line", route: "/informes" } // Asegúrate que esta ruta sea la correcta
-        ],
+        { title: "Informes", icon: "mdi-chart-line", route: "/informes" },
+      ],
       selectedRoute: this.$route.path,
     };
+  },
+  computed: {
+    // Accedemos al usuario del store global
+    user() {
+      return this.$store.state.user;
+    },
   },
   watch: {
     "$route.path"(newPath) {
@@ -112,9 +117,9 @@ export default {
     },
   },
   created() {
-    // Escucha los cambios en el estado de autenticación
+    // Escucha los cambios en el estado de autenticación y actualiza el store
     onAuthStateChanged(auth, (user) => {
-      this.user = user;
+      this.$store.commit("setUser", user);
     });
   },
   methods: {
@@ -124,7 +129,7 @@ export default {
       try {
         const provider = new GoogleAuthProvider();
         await signInWithPopup(auth, provider);
-        // El estado se actualizará automáticamente con onAuthStateChanged
+        // El estado se actualizará automáticamente con onAuthStateChanged y el store
       } catch (err) {
         this.error = err.message;
       } finally {
@@ -139,7 +144,7 @@ export default {
     async logout() {
       try {
         await signOut(auth);
-        this.user = null;
+        this.$store.commit("setUser", null);
         this.$router.push("/login");
       } catch (err) {
         console.error("Error al cerrar sesión:", err);

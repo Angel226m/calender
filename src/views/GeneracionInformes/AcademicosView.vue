@@ -11,59 +11,90 @@
       </p>
     </header>
 
-    <!-- Resumen General -->
-    <section class="summary">
-      <div class="summary-item">
-        <h2>{{ totalCourses }}</h2>
-        <p>Cursos</p>
-      </div>
-      <div class="summary-item">
-        <h2>{{ totalStudents }}</h2>
-        <p>Alumnos Totales</p>
-      </div>
-      <div class="summary-item">
-        <h2>{{ totalApproved }}</h2>
-        <p>Aprobados</p>
-      </div>
-      <div class="summary-item">
-        <h2>{{ totalFailed }}</h2>
-        <p>Reprobados</p>
-      </div>
-      <div class="summary-item">
-        <h2>{{ overallApproval }}</h2>
-        <p>% Aprobación</p>
-      </div>
-    </section>
+    <!-- Controles: Búsqueda y exportación -->
+    <div class="controls">
+      <input v-model="searchQuery" type="text" placeholder="Buscar curso..." class="search-input" />
+      <button @click="exportCSV" class="export-button">Exportar CSV</button>
+    </div>
 
-    <!-- Gráfico de Barras -->
-    <section class="chart-container">
-      <canvas id="chart"></canvas>
-    </section>
+    <!-- Indicador de carga -->
+    <div v-if="loading" class="loader">Cargando datos...</div>
+    
+    <!-- Mensaje de error -->
+    <div v-if="error" class="error-message">{{ error }}</div>
 
-    <!-- Tabla de Detalle por Curso -->
-    <section class="detail-table-container" v-if="reportData.length">
-      <h2 class="table-title">Detalle por Curso</h2>
-      <table class="detail-table">
-        <thead>
-          <tr>
-            <th>Curso</th>
-            <th>Alumnos Totales</th>
-            <th>Aprobados</th>
-            <th>Reprobados</th>
-            <th>% Aprobación</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="item in reportData" :key="item.courseName">
-            <td>{{ item.courseName }}</td>
-            <td>{{ item.totalStudents }}</td>
-            <td>{{ item.pass }}</td>
-            <td>{{ item.fail }}</td>
-            <td>{{ item.approval }}%</td>
-          </tr>
-        </tbody>
-      </table>
-    </section>
+    <!-- Contenido cuando ya se cargaron los datos -->
+    <div v-else>
+      <!-- Resumen General -->
+      <section class="summary">
+        <div class="summary-item">
+          <h2>{{ totalCourses }}</h2>
+          <p>Cursos</p>
+        </div>
+        <div class="summary-item">
+          <h2>{{ totalStudents }}</h2>
+          <p>Alumnos Totales</p>
+        </div>
+        <div class="summary-item">
+          <h2>{{ totalApproved }}</h2>
+          <p>Aprobados</p>
+        </div>
+        <div class="summary-item">
+          <h2>{{ totalFailed }}</h2>
+          <p>Reprobados</p>
+        </div>
+        <div class="summary-item">
+          <h2>{{ overallApproval }}</h2>
+          <p>% Aprobación</p>
+        </div>
+      </section>
+
+      <!-- Destacados de rendimiento -->
+      <section class="highlights">
+        <div class="highlight-item">
+          <h3>Mejor Curso</h3>
+          <p v-if="bestCourse">{{ bestCourse.courseName }} ({{ bestCourse.approval.toFixed(2) }}%)</p>
+          <p v-else>N/D</p>
+        </div>
+        <div class="highlight-item">
+          <h3>Curso con Más Reprobados</h3>
+          <p v-if="worstCourse">{{ worstCourse.courseName }} ({{ worstCourse.fail }} reprobados)</p>
+          <p v-else>N/D</p>
+        </div>
+      </section>
+
+      <!-- Gráfico de Barras -->
+      <section class="chart-container">
+        <canvas id="chart"></canvas>
+      </section>
+
+      <!-- Tabla de Detalle por Curso -->
+      <section class="detail-table-container" v-if="filteredReportData.length">
+        <h2 class="table-title">Detalle por Curso</h2>
+        <table class="detail-table">
+          <thead>
+            <tr>
+              <th @click="sortBy('courseName')">Curso</th>
+              <th @click="sortBy('totalStudents')">Alumnos Totales</th>
+              <th @click="sortBy('pass')">Aprobados</th>
+              <th @click="sortBy('fail')">Reprobados</th>
+              <th @click="sortBy('approval')">% Aprobación</th>
+              <th @click="sortBy('avgGrade')">Promedio General</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="item in filteredReportData" :key="item.courseName">
+              <td>{{ item.courseName }}</td>
+              <td>{{ item.totalStudents }}</td>
+              <td>{{ item.pass }}</td>
+              <td>{{ item.fail }}</td>
+              <td>{{ item.approval.toFixed(2) }}%</td>
+              <td>{{ item.avgGrade.toFixed(2) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+    </div>
   </div>
 </template>
 
@@ -78,21 +109,25 @@ export default {
   setup() {
     const coursesData = ref([]);
     const reportData = ref([]);
+    const loading = ref(true);
+    const error = ref('');
+    const searchQuery = ref('');
+    const sortKey = ref('');
+    const sortOrder = ref(1);
 
     const loadData = async () => {
       try {
         const currentUser = auth.currentUser;
         if (!currentUser) throw new Error("Usuario no autenticado");
 
-        // Consulta de cursos filtrados por usuario
         const cursosRef = collection(db, 'cursos');
         const q = query(cursosRef, where("userId", "==", currentUser.uid));
         const snapshot = await getDocs(q);
         coursesData.value = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-        // Procesamos cada curso para obtener datos del reporte
         reportData.value = coursesData.value.map(course => {
           let pass = 0, fail = 0, total = 0;
+          let totalGrades = 0;
           if (course.alumnos && Array.isArray(course.alumnos)) {
             course.alumnos.forEach(alumno => {
               if (alumno.notas) {
@@ -101,31 +136,38 @@ export default {
                   .filter(n => !isNaN(n));
                 if (notas.length > 0) {
                   total++;
-                  const avg = notas.reduce((a, b) => a + b, 0) / notas.length;
+                  const sum = notas.reduce((a, b) => a + b, 0);
+                  const avg = sum / notas.length;
+                  totalGrades += avg;
                   if (avg >= 10) pass++;
                   else fail++;
                 }
               }
             });
           }
-          const approval = total > 0 ? ((pass / total) * 100).toFixed(2) : "0.00";
+          const approval = total > 0 ? ((pass / total) * 100) : 0;
+          const avgGrade = total > 0 ? (totalGrades / total) : 0;
           return {
             courseName: `${course.nombre} - ${course.seccion}`,
             pass,
             fail,
             totalStudents: total,
-            approval
+            approval,
+            avgGrade
           };
         });
 
         renderChart(reportData.value);
-      } catch (error) {
-        console.error("Error cargando datos:", error);
+      } catch (err) {
+        console.error("Error cargando datos:", err);
+        error.value = err.message || "Error al cargar los datos.";
+      } finally {
+        loading.value = false;
       }
     };
 
     // Estadísticas globales
-    const totalCourses = computed(() => coursesData.value.length);
+    const totalCourses = computed(() => reportData.value.length);
     const totalStudents = computed(() =>
       reportData.value.reduce((sum, item) => sum + item.totalStudents, 0)
     );
@@ -142,7 +184,73 @@ export default {
         : 'N/A';
     });
 
-    // Renderiza el gráfico usando Chart.js
+    // Destacados
+    const bestCourse = computed(() => {
+      if (!reportData.value.length) return null;
+      return reportData.value.reduce((prev, current) =>
+        current.approval > prev.approval ? current : prev
+      );
+    });
+
+    const worstCourse = computed(() => {
+      if (!reportData.value.length) return null;
+      return reportData.value.reduce((prev, current) =>
+        current.fail > prev.fail ? current : prev
+      );
+    });
+
+    // Filtro de búsqueda y ordenamiento
+    const filteredReportData = computed(() => {
+      let data = [...reportData.value];
+      if (searchQuery.value) {
+        data = data.filter(item =>
+          item.courseName.toLowerCase().includes(searchQuery.value.toLowerCase())
+        );
+      }
+      if (sortKey.value) {
+        data.sort((a, b) => {
+          if (a[sortKey.value] < b[sortKey.value]) return -1 * sortOrder.value;
+          if (a[sortKey.value] > b[sortKey.value]) return 1 * sortOrder.value;
+          return 0;
+        });
+      }
+      return data;
+    });
+
+    const sortBy = (key) => {
+      if (sortKey.value === key) {
+        sortOrder.value = -sortOrder.value;
+      } else {
+        sortKey.value = key;
+        sortOrder.value = 1;
+      }
+    };
+
+    // Exporta los datos filtrados a CSV
+    const exportCSV = () => {
+      let csvContent = "data:text/csv;charset=utf-8,";
+      csvContent += "Curso,Alumnos Totales,Aprobados,Reprobados,% Aprobación,Promedio General\r\n";
+      filteredReportData.value.forEach(item => {
+        const row = [
+          item.courseName,
+          item.totalStudents,
+          item.pass,
+          item.fail,
+          item.approval.toFixed(2),
+          item.avgGrade.toFixed(2)
+        ].join(",");
+        csvContent += row + "\r\n";
+      });
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", "reporte_academico.csv");
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    };
+
+    // Renderiza el gráfico con animaciones
     const renderChart = (data) => {
       const labels = data.map(item => item.courseName);
       const passCounts = data.map(item => item.pass);
@@ -171,6 +279,10 @@ export default {
         },
         options: {
           responsive: true,
+          animation: {
+            duration: 1000,
+            easing: 'easeOutQuart'
+          },
           plugins: {
             title: {
               display: true,
@@ -208,7 +320,15 @@ export default {
       totalApproved,
       totalFailed,
       overallApproval,
-      reportData
+      reportData,
+      loading,
+      error,
+      searchQuery,
+      sortBy,
+      filteredReportData,
+      bestCourse,
+      worstCourse,
+      exportCSV
     };
   }
 };
@@ -217,11 +337,12 @@ export default {
 <style scoped>
 .reportes-container {
   padding: 30px;
-  max-width: 1000px;
+  max-width: 1200px;
   margin: 0 auto;
   background-color: #ffffff;
   border-radius: 12px;
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s ease;
 }
 
 .reportes-header {
@@ -230,22 +351,65 @@ export default {
 }
 
 .title {
-  font-size: 48px;
+  font-size: 2.5rem;
   font-weight: bold;
   color: #003366;
   margin: 0;
 }
 
 .subtitle {
-  font-size: 22px;
+  font-size: 1.5rem;
   color: #555;
   margin-top: 10px;
 }
 
+.controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 20px 0;
+  flex-wrap: wrap;
+}
+
+.search-input {
+  flex: 1;
+  padding: 10px;
+  margin-right: 10px;
+  min-width: 250px;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+}
+
+.export-button {
+  padding: 10px 20px;
+  background-color: #007acc;
+  color: #fff;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+}
+
+.export-button:hover {
+  background-color: #005fa3;
+}
+
+.loader {
+  text-align: center;
+  font-size: 1.2rem;
+  margin: 20px 0;
+}
+
+.error-message {
+  text-align: center;
+  color: red;
+  margin: 20px 0;
+}
+
 .summary {
   display: flex;
-  justify-content: space-around;
   flex-wrap: wrap;
+  justify-content: space-around;
   margin-bottom: 30px;
 }
 
@@ -253,22 +417,39 @@ export default {
   background-color: #f5f5f5;
   padding: 20px;
   border-radius: 10px;
-  width: 200px;
+  min-width: 200px;
   margin: 10px;
   text-align: center;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
 }
 
 .summary-item h2 {
-  font-size: 36px;
+  font-size: 2rem;
   color: #007acc;
   margin: 0;
 }
 
 .summary-item p {
-  font-size: 18px;
+  font-size: 1rem;
   color: #555;
   margin: 0;
+}
+
+.highlights {
+  display: flex;
+  justify-content: space-around;
+  margin-bottom: 30px;
+  flex-wrap: wrap;
+}
+
+.highlight-item {
+  background-color: #e0f7fa;
+  padding: 15px;
+  border-radius: 10px;
+  min-width: 250px;
+  margin: 10px;
+  text-align: center;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
 }
 
 .chart-container {
@@ -281,7 +462,7 @@ export default {
 }
 
 .table-title {
-  font-size: 28px;
+  font-size: 1.75rem;
   color: #003366;
   margin-bottom: 10px;
   text-align: center;
@@ -297,6 +478,13 @@ export default {
   border: 1px solid #ddd;
   padding: 10px;
   text-align: center;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.detail-table th:hover,
+.detail-table td:hover {
+  background-color: #f9f9f9;
 }
 
 .detail-table th {
