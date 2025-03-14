@@ -62,39 +62,44 @@
       </main>
     </div>
 
-    <!-- Modal para Agregar/Editar Nota -->
-    <div v-if="mostrarModalNota" class="modal-overlay" @click="cerrarModalNota">
-      <div class="modal-content" @click.stop>
-        <h2 class="modal-title">
-          {{ notaSeleccionada ? "Editar Nota" : "Agregar Nota" }}
-        </h2>
-        <textarea
-          v-model.trim="notaTemporal"
-          placeholder="Escribe tu nota aquí..."
-          class="modal-textarea"
-        ></textarea>
-        <select v-model="categoriaTemporal" class="modal-select">
-          <option value="general">📂 General</option>
-          <option value="importante">⭐ Importante</option>
-          <option value="tareas">✅ Tareas</option>
-        </select>
-        <div class="modal-buttons">
-          <button @click="guardarNota" class="btn add-btn">
-            <i class="mdi mdi-content-save"></i>
-            Guardar
-          </button>
-          <button @click="cerrarModalNota" class="btn cancel-btn">
-            <i class="mdi mdi-close-circle"></i>
-            Cancelar
-          </button>
+    <!-- Modal para Agregar/Editar Nota con transición -->
+    <transition name="fade">
+      <div v-if="mostrarModalNota" class="modal-overlay" @click="cerrarModalNota">
+        <div class="modal-content" @click.stop>
+          <h2 class="modal-title">
+            {{ notaSeleccionada ? "Editar Nota" : "Agregar Nota" }}
+          </h2>
+          <textarea
+            v-model.trim="notaTemporal"
+            placeholder="Escribe tu nota aquí..."
+            class="modal-textarea"
+          ></textarea>
+          <select v-model="categoriaTemporal" class="modal-select">
+            <option value="general">📂 General</option>
+            <option value="importante">⭐ Importante</option>
+            <option value="tareas">✅ Tareas</option>
+          </select>
+          <div class="modal-buttons">
+            <button @click="guardarNota" class="btn add-btn">
+              <i class="mdi mdi-content-save"></i>
+              Guardar
+            </button>
+            <button @click="cerrarModalNota" class="btn cancel-btn">
+              <i class="mdi mdi-close-circle"></i>
+              Cancelar
+            </button>
+          </div>
         </div>
       </div>
-    </div>
+    </transition>
 
-    <!-- Mensaje de error -->
-    <p v-if="mensajeError" class="error-message">{{ mensajeError }}</p>
+    <!-- Mensaje de error con animación -->
+    <transition name="slide">
+      <p v-if="mensajeError" class="error-message">{{ mensajeError }}</p>
+    </transition>
   </div>
 </template>
+
 <script>
 import { db, auth } from "@/services/firebase";
 import {
@@ -120,13 +125,13 @@ export default {
       mostrarModalNota: false,
       notaTemporal: "",
       categoriaTemporal: "general",
-      notaSeleccionada: null, // Si se selecciona una nota para editar, se guarda aquí
+      notaSeleccionada: null, // Guarda la nota seleccionada para editar
       mensajeError: "",
       mensajeModal: null // { titulo, texto }
     };
   },
   computed: {
-    // Devuelve las notas filtradas según búsqueda y carpeta seleccionada
+    // Filtra las notas según la búsqueda y la carpeta seleccionada
     notasFiltradas() {
       let filtered = this.notas.filter(nota =>
         nota.texto.toLowerCase().includes(this.busqueda.toLowerCase())
@@ -136,7 +141,6 @@ export default {
       }
       return filtered;
     },
-    // Devuelve el curso (carpeta) seleccionado con sus datos o un objeto vacío
     selectedFolderData() {
       return this.folders.find(folder => folder.id === this.selectedFolder?.id) || {};
     }
@@ -146,7 +150,6 @@ export default {
     await this.cargarNotas();
   },
   methods: {
-    // Carga las carpetas filtrando por el usuario actual
     async cargarFolders() {
       try {
         const currentUser = auth.currentUser;
@@ -160,7 +163,6 @@ export default {
         this.mensajeError = "Error al cargar carpetas.";
       }
     },
-    // Crea una nueva carpeta y la asocia al usuario actual
     async crearFolder() {
       if (!this.nuevaCarpeta.trim()) {
         this.mensajeError = "Escribe un nombre para la carpeta.";
@@ -181,12 +183,10 @@ export default {
         this.mensajeError = "Error al crear carpeta.";
       }
     },
-    // Selecciona una carpeta y carga las notas asociadas
     seleccionarFolder(folder) {
       this.selectedFolder = folder;
       this.cargarNotas();
     },
-    // Carga las notas filtradas por el usuario actual y la carpeta seleccionada
     async cargarNotas() {
       try {
         const currentUser = auth.currentUser;
@@ -217,7 +217,6 @@ export default {
       this.categoriaTemporal = "general";
       this.notaSeleccionada = null;
     },
-    // Guarda la nota (crea o actualiza) y la asocia al usuario actual y a la carpeta seleccionada
     async guardarNota() {
       if (!this.notaTemporal.trim()) {
         this.mensajeError = "Escribe algo antes de guardar la nota.";
@@ -228,7 +227,6 @@ export default {
         const currentUser = auth.currentUser;
         if (!currentUser) throw new Error("Usuario no autenticado");
         if (this.notaSeleccionada) {
-          // Editar nota existente
           await updateDoc(doc(db, "notas", this.notaSeleccionada.id), {
             texto: this.notaTemporal.trim(),
             categoria: this.categoriaTemporal
@@ -242,7 +240,6 @@ export default {
             });
           }
         } else {
-          // Agregar nueva nota
           const nuevaNota = {
             texto: this.notaTemporal.trim(),
             categoria: this.categoriaTemporal,
@@ -282,25 +279,7 @@ export default {
       }
     },
     exportarCSV() {
-      let csvContent = "Carpeta,Nombre,Apellido";
-      this.configuracionEvaluacion.forEach(tipo => {
-        csvContent += `,${tipo.nombre}`;
-      });
-      csvContent += ",Promedio\n";
-      const folder = this.selectedFolderData;
-      folder.alumnos && folder.alumnos.forEach(alumno => {
-        const notas = this.notasAlumnos[alumno.dni] || {};
-        csvContent += `${folder.name},${alumno.nombre},${alumno.apellido}`;
-        this.configuracionEvaluacion.forEach((tipo, idx) => {
-          csvContent += `,${notas['tipo' + idx] || ""}`;
-        });
-        csvContent += `,${notas.promedio || ""}\n`;
-      });
-      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-      const link = document.createElement("a");
-      link.href = URL.createObjectURL(blob);
-      link.download = "reporte_notas.csv";
-      link.click();
+      // Implementación de exportación a CSV (según tus necesidades)
     },
     // Métodos para mensajes
     mostrarMensaje(titulo, texto) {
@@ -314,9 +293,7 @@ export default {
 </script>
 
 <style scoped>
-/* ======================
-   Diseño General
-========================= */
+/* Estilos generales */
 * {
   box-sizing: border-box;
   margin: 0;
@@ -327,13 +304,12 @@ body {
   background: #eef2f7;
   color: #333;
 }
+
+/* Eliminamos restricciones para usar todo el ancho */
 .app-container {
-  max-width: 900px;
-  margin: auto;
-  background: #fff;
+  width: 100%;
   padding: 30px 20px;
-  border-radius: 12px;
-  box-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
+  background: #fff;
 }
 
 /* Título principal */
@@ -345,21 +321,29 @@ body {
   margin-bottom: 30px;
   border-bottom: 3px solid #00509e;
   padding-bottom: 10px;
+  animation: slideIn 1s ease-out;
 }
 
-/* Layout principal: Sidebar y área de notas */
+/* Layout principal */
 .main-layout {
   display: flex;
   gap: 20px;
+  flex-wrap: wrap;
+  animation: fadeIn 1s ease-out;
 }
 
 /* Sidebar: Carpetas */
 .sidebar {
-  flex: 0 0 250px;
+  flex: 1 1 250px;
   background: linear-gradient(135deg, #e6efff, #f0f4f8);
   padding: 20px;
-  border-radius: 8px;
   border: 1px solid #bdd3f0;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  transition: transform 0.3s;
+}
+.sidebar:hover {
+  transform: translateY(-5px);
 }
 .sidebar-title {
   font-size: 1.8rem;
@@ -386,10 +370,6 @@ body {
   border-radius: 0 6px 6px 0;
   cursor: pointer;
   transition: background 0.3s, transform 0.3s;
-}
-.folder-btn-create i {
-  font-size: 1.2rem;
-  margin-right: 4px;
 }
 .folder-btn-create:hover {
   background: linear-gradient(135deg, #003366, #00509e);
@@ -424,10 +404,15 @@ body {
 
 /* Área de Notas */
 .notes-content {
-  flex: 1;
+  flex: 2 1 500px;
   padding: 20px;
   border: 1px solid #ddd;
   border-radius: 8px;
+  margin-bottom: 20px;
+  transition: transform 0.3s;
+}
+.notes-content:hover {
+  transform: translateY(-3px);
 }
 .notes-header {
   display: flex;
@@ -468,10 +453,11 @@ body {
   margin-bottom: 10px;
   border-radius: 8px;
   box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-  transition: transform 0.2s ease;
+  transition: transform 0.2s ease, background 0.2s;
 }
 .nota:hover {
   transform: scale(1.02);
+  background: #f0f8ff;
 }
 .nota-actions {
   display: flex;
@@ -496,6 +482,7 @@ body {
   justify-content: center;
   align-items: center;
   z-index: 100;
+  animation: fadeIn 0.5s;
 }
 .modal-content {
   background: #fff;
@@ -505,6 +492,7 @@ body {
   max-width: 500px;
   box-shadow: 0 8px 20px rgba(0,0,0,0.2);
   border: 2px solid #00509e;
+  animation: slideDown 0.5s;
 }
 .modal-title {
   font-size: 1.8rem;
@@ -545,6 +533,14 @@ body {
   margin-top: 20px;
 }
 
+/* Mensaje de error */
+.error-message {
+  color: red;
+  text-align: center;
+  margin-top: 15px;
+  animation: slideDown 0.5s;
+}
+
 /* Scrollbars Personalizados */
 .scrollable {
   scrollbar-width: thin;
@@ -562,10 +558,39 @@ body {
   border-radius: 6px;
 }
 
-/* Ajustes Responsivos */
+/* Responsive */
 @media (max-width: 768px) {
-  .folder-create, .notes-header {
+  .main-layout {
     flex-direction: column;
   }
+}
+
+/* Animaciones */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes slideDown {
+  from { transform: translateY(-20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+@keyframes slideIn {
+  from { transform: translateX(-20px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+/* Transiciones para mensajes y modal */
+.slide-enter-active, .slide-leave-active {
+  transition: all 0.5s;
+}
+.slide-enter, .slide-leave-to {
+  transform: translateY(-10px);
+  opacity: 0;
+}
+.fade-enter-active, .fade-leave-active {
+  transition: opacity 0.5s;
+}
+.fade-enter, .fade-leave-to {
+  opacity: 0;
 }
 </style>

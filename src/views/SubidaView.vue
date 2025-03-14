@@ -16,6 +16,7 @@
         </button>
       </div>
       <ul class="folder-list">
+        <!-- Muestra las carpetas que lleguen desde el backend (o las creadas localmente) -->
         <li
           v-for="(carpeta, index) in carpetas"
           :key="carpeta.id || index"
@@ -30,6 +31,7 @@
 
     <!-- Main: Área de archivos -->
     <main class="main-content">
+      <!-- Sección de subida -->
       <section class="upload-section">
         <div
           class="drop-zone"
@@ -46,7 +48,9 @@
               :key="index"
               class="preview-item"
             >
-              <span>{{ archivo.name }} ({{ (archivo.size / 1024 / 1024).toFixed(2) }} MB)</span>
+              <span>
+                {{ archivo.name }} ({{ (archivo.size / 1024 / 1024).toFixed(2) }} MB)
+              </span>
               <button @click.stop="eliminarArchivo(index)" class="btn-delete">
                 <i class="mdi mdi-delete"></i>
               </button>
@@ -69,21 +73,32 @@
         </button>
       </section>
 
-      <section v-if="carpetaSeleccionada" class="files-section">
-        <h2 class="files-title">Archivos en "{{ carpetaSeleccionada.name }}"</h2>
+      <!-- Sección de archivos en la carpeta -->
+      <section class="files-section">
+        <h2 class="files-title" v-if="carpetaSeleccionada">
+          Archivos en "{{ carpetaSeleccionada.name }}"
+        </h2>
+        <p v-else class="files-title">
+          Selecciona una carpeta para ver sus archivos.
+        </p>
         <ul class="files-list">
           <li
             v-for="(file, index) in filesBySelectedFolder"
             :key="file.fileId"
             class="file-item"
           >
-            <span class="file-name">{{ file.fileName.split('/').pop() }}</span>
+            <span class="file-name">
+              {{ file.fileName.split('/').pop() }}
+            </span>
             <div class="file-actions">
               <button @click="descargarArchivo(file)" class="btn-download">
                 <i class="mdi mdi-download"></i>
                 Descargar
               </button>
-              <button @click="eliminarArchivoRemoto(file, index)" class="btn-delete">
+              <button
+                @click="confirmarEliminacion(file, index)"
+                class="btn-delete"
+              >
                 <i class="mdi mdi-delete"></i>
                 Eliminar
               </button>
@@ -94,6 +109,25 @@
 
       <p v-if="error" class="error-message">{{ error }}</p>
     </main>
+
+    <!-- Modal de confirmación para eliminar -->
+    <div v-if="modalEliminar.show" class="modal-fondo">
+      <div class="modal-contenido">
+        <h3>Confirmar eliminación</h3>
+        <p>
+          ¿Seguro que deseas eliminar
+          <strong>{{ modalEliminar.fileName.split('/').pop() }}</strong>?
+        </p>
+        <div class="modal-botones">
+          <button class="btn-cancelar" @click="cancelarEliminacion">
+            Cancelar
+          </button>
+          <button class="btn-confirmar" @click="eliminarArchivoRemotoConfirmado">
+            Eliminar
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -102,14 +136,20 @@ export default {
   name: "SubidaView",
   data() {
     return {
-      archivos: [],           // Archivos seleccionados para subir
-      listadoArchivos: [],    // Archivos consultados desde el backend (ya subidos)
-      carpetas: [],           // Carpetas obtenidas de la BD (por usuario)
+      archivos: [],             // Archivos seleccionados para subir
+      listadoArchivos: [],      // Archivos obtenidos del backend
+      carpetas: [],             // Carpetas creadas por el usuario (desde backend simulado)
       nuevaCarpeta: "",
-      carpetaSeleccionada: null, // Objeto de carpeta seleccionado (ej. { id, name })
+      carpetaSeleccionada: null,
       error: null,
       subiendo: false,
-      // Tipos permitidos: incluye imágenes, PDF, Word, PowerPoint, Excel, etc.
+      modalEliminar: {
+        show: false,            // Para mostrar/ocultar el modal de confirmación
+        fileId: null,
+        fileName: "",
+        index: null
+      },
+      // Tipos permitidos
       tiposPermitidos: [
         "image/png",
         "image/jpeg",
@@ -127,13 +167,17 @@ export default {
     };
   },
   computed: {
-    // Accede al usuario global desde Vuex
+    // Usuario global (incluye uid y token)
     user() {
       return this.$store.state.user;
     },
-    // Filtra los archivos según la carpeta seleccionada
-    // Dado que la ruta de los archivos es "archivos/{uid}/{carpeta}/{archivo}",
-    // usamos parts[2] para comparar con el nombre de la carpeta
+    // Headers de autorización
+    authHeaders() {
+      return this.user && this.user.token
+        ? { Authorization: `Bearer ${this.user.token}` }
+        : {};
+    },
+    // Filtra archivos según la carpeta seleccionada
     filesBySelectedFolder() {
       if (!this.carpetaSeleccionada) return [];
       return this.listadoArchivos.filter((file) => {
@@ -144,13 +188,67 @@ export default {
     },
   },
   mounted() {
-    // Si el usuario está autenticado, consultamos carpetas y archivos
     if (this.user && this.user.uid) {
       this.obtenerCarpetas();
       this.listarArchivos();
     }
   },
   methods: {
+    /* ---------------- Carpeta ---------------- */
+    async crearCarpeta() {
+      if (!this.nuevaCarpeta.trim()) return;
+      if (!this.user || !this.user.uid || !this.user.token) {
+        alert("❌ Usuario no autenticado.");
+        return;
+      }
+      const nombre = this.nuevaCarpeta.trim();
+      try {
+        const response = await fetch("http://localhost:3000/folder", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...this.authHeaders,
+          },
+          body: JSON.stringify({ name: nombre, uid: this.user.uid }),
+        });
+        const result = await response.json();
+        if (result.success) {
+          // Agrega la carpeta creada al arreglo
+          this.carpetas.push(result.data);
+          // Selecciona la carpeta recién creada
+          this.carpetaSeleccionada = result.data;
+          this.nuevaCarpeta = "";
+        } else {
+          this.error = result.error;
+        }
+      } catch (err) {
+        this.error = err.message;
+      }
+    },
+    async obtenerCarpetas() {
+      if (!this.user || !this.user.uid || !this.user.token) return;
+      try {
+        const response = await fetch(
+          `http://localhost:3000/folders?uid=${this.user.uid}`,
+          { headers: this.authHeaders }
+        );
+        const result = await response.json();
+        if (result.success) {
+          // Se asume que el backend devuelve un arreglo con las carpetas
+          this.carpetas = result.folders;
+        } else {
+          this.error = result.error;
+        }
+      } catch (err) {
+        this.error = err.message;
+      }
+    },
+    seleccionarCarpeta(carpeta) {
+      this.carpetaSeleccionada = carpeta;
+      this.listarArchivos();
+    },
+
+    /* ---------------- Subida de Archivos ---------------- */
     seleccionarArchivo(event) {
       const files = event.target.files;
       if (files) this.agregarArchivos(files);
@@ -174,6 +272,7 @@ export default {
           this.error = `❌ ${file.name} supera el límite (${this.maxSizeMB} MB).`;
           return;
         }
+        // Evitar archivos duplicados
         if (!this.archivos.some((f) => f.name === file.name)) {
           this.archivos.push(file);
         }
@@ -182,60 +281,12 @@ export default {
     eliminarArchivo(index) {
       this.archivos.splice(index, 1);
     },
-    // Crea una carpeta enviando también el UID del usuario
-    async crearCarpeta() {
-      if (!this.nuevaCarpeta.trim()) return;
-      const nombre = this.nuevaCarpeta.trim();
-      if (!this.user || !this.user.uid) {
-        alert("❌ Usuario no autenticado.");
-        return;
-      }
-      try {
-        const response = await fetch("http://localhost:3000/folder", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: nombre, uid: this.user.uid }),
-        });
-        const result = await response.json();
-        if (result.success) {
-          // Solo se agrega la carpeta si pertenece al usuario
-          this.carpetas.push(result.data);
-          this.nuevaCarpeta = "";
-        } else {
-          this.error = result.error;
-        }
-      } catch (err) {
-        this.error = err.message;
-      }
-    },
-    // Obtiene las carpetas solo para el usuario autenticado
-    async obtenerCarpetas() {
-      if (!this.user || !this.user.uid) return;
-      try {
-        const response = await fetch(`http://localhost:3000/folders?uid=${this.user.uid}`);
-        const result = await response.json();
-        if (result.success) {
-          this.carpetas = result.folders;
-        } else {
-          this.error = result.error;
-        }
-      } catch (err) {
-        this.error = err.message;
-      }
-    },
-    seleccionarCarpeta(carpeta) {
-      this.carpetaSeleccionada = carpeta;
-      // Al seleccionar una carpeta, se actualiza la lista de archivos
-      this.listarArchivos();
-    },
-    // Sube archivos al backend usando la carpeta seleccionada.
-    // Se envían "carpeta" y el "uid" del usuario en el formData.
     async subirArchivos() {
       if (!this.archivos.length || !this.carpetaSeleccionada) {
-        alert("⚠️ Selecciona archivos y una carpeta.");
+        alert("⚠️ Debes seleccionar archivos y una carpeta primero.");
         return;
       }
-      if (!this.user || !this.user.uid) {
+      if (!this.user || !this.user.uid || !this.user.token) {
         alert("❌ Usuario no autenticado.");
         return;
       }
@@ -248,13 +299,17 @@ export default {
         try {
           const response = await fetch("http://localhost:3000/upload", {
             method: "POST",
+            headers: {
+              ...this.authHeaders,
+            },
             body: formData,
           });
           const result = await response.json();
           if (result.success) {
+            // Agregar el archivo subido a la lista de archivos
             this.listadoArchivos.push({
               name: archivo.name,
-              fileName: result.data.fileName, // Ejemplo: "archivos/{uid}/{carpeta}/{nombreArchivo}"
+              fileName: result.data.fileName,
               fileId: result.data.fileId,
             });
           } else {
@@ -264,15 +319,21 @@ export default {
           this.error = `Error al subir ${archivo.name}: ${err.message}`;
         }
       }
-      alert(`✅ ${this.archivos.length} archivo(s) subido(s) a "${this.carpetaSeleccionada.name}".`);
+      alert(
+        `✅ ${this.archivos.length} archivo(s) subido(s) a la carpeta "${this.carpetaSeleccionada.name}".`
+      );
       this.archivos = [];
       this.subiendo = false;
     },
-    // Lista los archivos solo del usuario autenticado
+
+    /* ---------------- Listar/Descargar/Eliminar ---------------- */
     async listarArchivos() {
-      if (!this.user || !this.user.uid) return;
+      if (!this.user || !this.user.uid || !this.user.token) return;
       try {
-        const response = await fetch(`http://localhost:3000/files?uid=${this.user.uid}`);
+        const response = await fetch(
+          `http://localhost:3000/files?uid=${this.user.uid}`,
+          { headers: this.authHeaders }
+        );
         const result = await response.json();
         if (result.success) {
           this.listadoArchivos = result.files;
@@ -283,11 +344,15 @@ export default {
         this.error = err.message;
       }
     },
-    // Descarga archivo solicitando URL firmada en /download (incluye uid para verificación)
     async descargarArchivo(file) {
-      if (!this.user || !this.user.uid) return;
+      if (!this.user || !this.user.uid || !this.user.token) return;
       try {
-        const response = await fetch(`http://localhost:3000/download?fileName=${encodeURIComponent(file.fileName)}&uid=${this.user.uid}`);
+        const response = await fetch(
+          `http://localhost:3000/download?fileName=${encodeURIComponent(
+            file.fileName
+          )}&uid=${this.user.uid}`,
+          { headers: this.authHeaders }
+        );
         const result = await response.json();
         if (result.success) {
           window.open(result.signedUrl, "_blank");
@@ -298,33 +363,58 @@ export default {
         this.error = err.message;
       }
     },
-    // Elimina archivo mediante DELETE a /file
-    async eliminarArchivoRemoto(file, index) {
+    // Muestra el modal de confirmación para eliminar
+    confirmarEliminacion(file, index) {
+      this.modalEliminar.show = true;
+      this.modalEliminar.fileId = file.fileId;
+      this.modalEliminar.fileName = file.fileName;
+      this.modalEliminar.index = index;
+    },
+    // Cancela la eliminación
+    cancelarEliminacion() {
+      this.modalEliminar.show = false;
+      this.modalEliminar.fileId = null;
+      this.modalEliminar.fileName = "";
+      this.modalEliminar.index = null;
+    },
+    // Confirma y elimina el archivo remoto
+    async eliminarArchivoRemotoConfirmado() {
+      const { fileId, fileName, index } = this.modalEliminar;
+      if (!this.user || !this.user.uid || !this.user.token) return;
       try {
-        const response = await fetch(`http://localhost:3000/file?fileId=${file.fileId}&fileName=${encodeURIComponent(file.fileName)}`, {
-          method: "DELETE",
-        });
+        const response = await fetch(
+          `http://localhost:3000/file?fileId=${fileId}&fileName=${encodeURIComponent(
+            fileName
+          )}&uid=${this.user.uid}`,
+          {
+            method: "DELETE",
+            headers: this.authHeaders,
+          }
+        );
         const result = await response.json();
         if (result.success) {
+          // Eliminar de la lista local
           this.listadoArchivos.splice(index, 1);
         } else {
           this.error = result.error;
         }
       } catch (err) {
         this.error = err.message;
+      } finally {
+        // Cerrar el modal de confirmación
+        this.cancelarEliminacion();
       }
     },
   },
 };
 </script>
 
-
 <style scoped>
-/* Distribución en dos columnas: sidebar y contenido principal */
+/* Layout general */
 .file-manager {
   display: flex;
   min-height: 80vh;
-  font-family: 'Arial', sans-serif;
+  font-family: "Arial", sans-serif;
 }
 
 /* Sidebar de carpetas */
@@ -334,18 +424,15 @@ export default {
   padding: 1rem;
   border-right: 1px solid #ddd;
 }
-
 .sidebar-title {
   margin: 0 0 1rem;
   font-size: 1.5rem;
   color: #003366;
 }
-
 .folder-create {
   display: flex;
   margin-bottom: 1rem;
 }
-
 .folder-input {
   flex: 1;
   padding: 0.5rem;
@@ -353,7 +440,6 @@ export default {
   border-radius: 4px 0 0 4px;
   font-size: 1rem;
 }
-
 .folder-btn-create {
   padding: 0.5rem 1rem;
   border: none;
@@ -363,23 +449,19 @@ export default {
   cursor: pointer;
   transition: background 0.3s, transform 0.3s;
 }
-
 .folder-btn-create i {
   font-size: 1.2rem;
   margin-right: 4px;
 }
-
 .folder-btn-create:hover {
   background: linear-gradient(135deg, #003366, #00509e);
   transform: scale(1.03);
 }
-
 .folder-list {
   list-style: none;
   padding: 0;
   margin: 0;
 }
-
 .folder-list li {
   display: flex;
   align-items: center;
@@ -393,11 +475,9 @@ export default {
   transition: background 0.3s, color 0.3s;
   color: #003366;
 }
-
 .folder-list li i {
   font-size: 1.2rem;
 }
-
 .folder-list li.active,
 .folder-list li:hover {
   background: #00509e;
@@ -414,7 +494,6 @@ export default {
 .upload-section {
   margin-bottom: 2rem;
 }
-
 .drop-zone {
   border: 2px dashed #00509e;
   border-radius: 4px;
@@ -423,13 +502,11 @@ export default {
   cursor: pointer;
   background: #f9f9f9;
 }
-
 .preview-list {
   list-style: none;
   padding: 0;
   margin: 0;
 }
-
 .preview-item {
   display: flex;
   justify-content: space-between;
@@ -437,7 +514,6 @@ export default {
   padding: 0.25rem 0;
   border-bottom: 1px solid #eee;
 }
-
 .upload-btn {
   margin-top: 1rem;
   padding: 0.5rem 1rem;
@@ -448,12 +524,10 @@ export default {
   cursor: pointer;
   transition: background 0.3s;
 }
-
 .upload-btn:disabled {
   background: #95a5a6;
   cursor: not-allowed;
 }
-
 .upload-btn:hover:not(:disabled) {
   background: linear-gradient(135deg, #003366, #00509e);
 }
@@ -465,19 +539,16 @@ export default {
   border: 1px solid #ddd;
   border-radius: 4px;
 }
-
 .files-title {
   margin-top: 0;
   font-size: 1.3rem;
   color: #003366;
 }
-
 .files-list {
   list-style: none;
   padding: 0;
   margin: 0;
 }
-
 .file-item {
   display: flex;
   justify-content: space-between;
@@ -485,7 +556,6 @@ export default {
   border-bottom: 1px solid #eee;
   padding: 0.5rem 0;
 }
-
 .file-actions button {
   margin-left: 0.5rem;
   border: none;
@@ -497,31 +567,75 @@ export default {
   align-items: center;
   gap: 4px;
 }
-
 .btn-download {
   background: #2ecc71;
   color: #fff;
 }
-
 .btn-download:hover {
   background: #27ae60;
 }
-
 .btn-delete {
   background: #e74c3c;
   color: #fff;
 }
-
 .btn-delete:hover {
   background: #c0392b;
 }
 
+/* Modal de confirmación */
+.modal-fondo {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0,0,0,0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+.modal-contenido {
+  background-color: #fff;
+  width: 320px;
+  max-width: 90%;
+  padding: 1rem;
+  border-radius: 4px;
+}
+.modal-contenido h3 {
+  margin-top: 0;
+}
+.modal-botones {
+  display: flex;
+  justify-content: flex-end;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+.btn-cancelar {
+  background: #bdc3c7;
+  color: #2c3e50;
+  border: none;
+  padding: 0.4rem 0.8rem;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.btn-confirmar {
+  background: #e74c3c;
+  color: #fff;
+  border: none;
+  padding: 0.4rem 0.8rem;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.btn-confirmar:hover {
+  background: #c0392b;
+}
+
+/* Otros */
 .error-message {
   color: #e74c3c;
   font-size: 1rem;
   margin-top: 1rem;
 }
-
 .hidden {
   display: none;
 }

@@ -1,59 +1,100 @@
 <template>
   <div>
     <!-- Encabezado -->
-    <div class="header">
+    <div class="header animated fadeIn">
       <h1>📅 Calendario de Eventos</h1>
       <div class="actions">
-        <button class="add-event-btn" @click="openModal()">➕ Agregar Evento</button>
-        <input type="file" class="file-input" @change="handleFileUpload" accept=".xlsx, .xls" />
+        <button class="add-event-btn animated bounceIn" @click="openModal()">
+          ➕ Agregar Evento
+        </button>
+        <input
+          type="file"
+          class="file-input"
+          @change="handleFileUpload"
+          accept=".xlsx, .xls"
+        />
       </div>
     </div>
 
     <!-- Calendario -->
     <FullCalendar
       ref="calendarRef"
-      class="custom-calendar"
+      class="custom-calendar animated fadeIn"
       :options="calendarOptions"
     />
 
     <!-- Modal para agregar/editar evento manual -->
-    <div v-if="showModal" class="modal-overlay" @click="closeModal">
-      <div class="modal-content" @click.stop>
-        <h2 class="modal-title">{{ isEditing ? "Editar Evento" : "Agregar Evento" }}</h2>
-        <!-- Campo para título (opcional) -->
-        <input v-model="newEvent.title" placeholder="Título del evento (opcional)" />
-        <!-- Campo para seleccionar fecha (valor por defecto y mínimo = ayer) -->
-        <input v-model="newEvent.start" type="date" :min="minDate" required />
-        <!-- Campo para seleccionar hora -->
-        <input v-model="newEvent.time" type="time" required />
+    <div v-if="showModal" class="modal-overlay">
+      <div class="modal-content" style="max-height: 80vh; overflow-y: auto;" @click.stop>
+        <h2 class="modal-title">
+          {{ isEditing ? "Editar Evento" : "Agregar Evento" }}
+        </h2>
+        <!-- Campo para título (obligatorio) -->
+        <div class="field">
+          <label for="event-title">Título del evento:</label>
+          <input id="event-title" v-model="newEvent.title" placeholder="Título del evento (obligatorio)" />
+        </div>
+        <!-- Campo para seleccionar fecha -->
+        <div class="field">
+          <label for="event-date">Fecha:</label>
+          <input id="event-date" v-model="newEvent.start" type="date" :min="minDate" required />
+        </div>
+        <!-- Campo para seleccionar hora de inicio -->
+        <div class="field">
+          <label for="event-start">Hora de inicio:</label>
+          <input id="event-start" v-model="newEvent.time" type="time" required />
+        </div>
+        <!-- Campo para seleccionar hora de fin -->
+        <div class="field">
+          <label for="event-end">Hora de fin:</label>
+          <input id="event-end" v-model="newEvent.end" type="time" required />
+        </div>
         <!-- Selección de curso (opcional) -->
-        <select v-model="newEvent.courseId">
-          <option disabled value="">Seleccionar Curso (opcional)</option>
-          <option v-for="curso in courses" :key="curso.id" :value="curso.id">
-            {{ curso.nombre }} - {{ curso.seccion }}
-          </option>
-        </select>
+        <div class="field">
+          <label for="event-course">Curso:</label>
+          <select id="event-course" v-model="newEvent.courseId">
+            <option disabled value="">Seleccionar Curso (opcional)</option>
+            <option v-for="curso in courses" :key="curso.id" :value="curso.id">
+              {{ curso.nombre }} - {{ curso.seccion }}
+            </option>
+          </select>
+        </div>
 
         <!-- Mostrar eventos programados para la fecha seleccionada -->
-        <div v-if="scheduledEvents.length" class="scheduled-events">
-          <h3>Eventos programados para este día:</h3>
-          <ul>
-            <li v-for="evt in scheduledEvents" :key="evt.id">
-              {{ evt.title }} - {{ evt.course ? evt.course : '' }} - {{ evt.time }}
-            </li>
-          </ul>
+        <div v-if="scheduledManualEvents.length || scheduledCourseEvents.length" class="scheduled-events animated slideInUp">
+          <h3>Programación para este día:</h3>
+          <div v-if="scheduledManualEvents.length">
+            <h4>Eventos del día:</h4>
+            <ul>
+              <li v-for="evt in scheduledManualEvents" :key="evt.id">
+                {{ evt.title }} - {{ evt.time }}
+                <span v-if="evt.end"> a {{ evt.end.split('T')[1] }}</span>
+              </li>
+            </ul>
+          </div>
+          <div v-if="scheduledCourseEvents.length">
+            <h4>Cursos del día:</h4>
+            <ul>
+              <li v-for="evt in scheduledCourseEvents" :key="evt.id">
+                {{ evt.title }} - {{ evt.time }}
+                <span v-if="evt.end"> a {{ evt.end.split('T')[1] }}</span>
+              </li>
+            </ul>
+          </div>
         </div>
 
         <div class="modal-buttons">
           <button class="save-btn" @click="saveEvent">💾 Guardar</button>
-          <button v-if="isEditing" class="delete-btn" @click="openDeleteConfirm">🗑️ Eliminar</button>
+          <button v-if="isEditing" class="delete-btn" @click="openDeleteConfirm">
+            🗑️ Eliminar
+          </button>
           <button class="cancel-btn" @click="closeModal">❌ Cancelar</button>
         </div>
       </div>
     </div>
 
     <!-- Modal de Confirmación para eliminación -->
-    <div v-if="showDeleteConfirm" class="modal-overlay" @click="closeDeleteConfirm">
+    <div v-if="showDeleteConfirm" class="modal-overlay animated popIn" @click="closeDeleteConfirm">
       <div class="modal-content" @click.stop>
         <h2 class="modal-title">Confirmación de Eliminación</h2>
         <p>¿Estás seguro de que deseas eliminar este evento?</p>
@@ -65,10 +106,10 @@
     </div>
 
     <!-- Modal de Confirmación por conflicto de horario -->
-    <div v-if="showConflictConfirm" class="modal-overlay" @click="cancelConflict">
+    <div v-if="showConflictConfirm" class="modal-overlay animated popIn" @click="cancelConflict">
       <div class="modal-content" @click.stop>
         <h2 class="modal-title">Conflicto de Horario</h2>
-        <p>Ya existe un evento en esa fecha y hora. ¿Deseas continuar de todas formas?</p>
+        <p>Ya existe un evento o curso que se cruza en el mismo intervalo. ¿Estás seguro de que deseas continuar?</p>
         <div class="modal-buttons">
           <button class="save-btn" @click="confirmConflict">Continuar</button>
           <button class="cancel-btn" @click="cancelConflict">Cancelar</button>
@@ -77,7 +118,7 @@
     </div>
 
     <!-- Modal de Notificación (errores, avisos, etc.) -->
-    <div v-if="showMessageModal" class="modal-overlay" @click="closeMessageModal">
+    <div v-if="showMessageModal" class="modal-overlay animated popIn" @click="closeMessageModal">
       <div class="modal-content" @click.stop>
         <h2 class="modal-title">{{ messageTitle }}</h2>
         <p>{{ messageContent }}</p>
@@ -88,6 +129,7 @@
     </div>
   </div>
 </template>
+
 <script setup>
 import { ref, computed, watch, onMounted, defineExpose } from "vue";
 import FullCalendar from "@fullcalendar/vue";
@@ -103,29 +145,21 @@ import {
   deleteDoc,
   doc,
   query,
-  where
+  where,
 } from "firebase/firestore";
 
-// Función para obtener la fecha de ayer en formato ISO (YYYY-MM-DD)
-const getYesterday = () => {
-  const date = new Date();
-  date.setDate(date.getDate() - 1);
-  return date.toISOString().split("T")[0];
-};
-
-const defaultDate = computed(() => getYesterday());
+// Función para obtener la fecha de hoy (formato ISO: YYYY-MM-DD)
+const getToday = () => new Date().toISOString().split("T")[0];
+const defaultDate = computed(() => getToday());
 const minDate = computed(() => defaultDate.value);
 
-// Estado y manejo de errores
 const isLoading = ref(false);
 const errorMsg = ref("");
 
-// Eventos manuales y cursos (Firebase)
-// NOTA: Al cargar eventos, se filtran por userId (del usuario autenticado)
 const manualEvents = ref([]);
 const courses = ref([]);
 
-// Mapeo de días de la semana para cursos
+// Mapeo de días para cursos
 const diasSemana = {
   "Domingo": 0,
   "Lunes": 1,
@@ -133,15 +167,16 @@ const diasSemana = {
   "Miércoles": 3,
   "Jueves": 4,
   "Viernes": 5,
-  "Sábado": 6
+  "Sábado": 6,
 };
 
-// Combina fecha y hora para eventos manuales
+// Combina eventos manuales y de cursos
 const events = computed(() => {
-  const manual = manualEvents.value.map(e => ({
-    ...e,
-    start: e.start + "T" + e.time
-  }));
+  const manual = manualEvents.value.map(e => {
+    const eventObj = { ...e, start: e.start + "T" + e.time };
+    if (e.end) eventObj.end = e.start + "T" + e.end;
+    return eventObj;
+  });
   const courseEvents = courses.value.map(curso => {
     const targetDay = diasSemana[curso.dia];
     if (targetDay === undefined) return null;
@@ -149,6 +184,7 @@ const events = computed(() => {
       id: `curso-${curso.id}`,
       title: `${curso.nombre} - ${curso.seccion}`,
       daysOfWeek: [targetDay],
+      time: curso.hora,
       startTime: curso.hora,
       startRecur: curso.fechaInicio,
       endRecur: curso.fechaFin,
@@ -158,15 +194,11 @@ const events = computed(() => {
   return [...manual, ...courseEvents];
 });
 
-// Variables del modal para agregar/editar eventos
 const showModal = ref(false);
 const isEditing = ref(false);
-const newEvent = ref({ id: null, title: "", start: "", time: "", courseId: "" });
-
-// Referencia al calendario
+const newEvent = ref({ id: null, title: "", start: "", time: "", end: "", courseId: "" });
 const calendarRef = ref(null);
 
-// Abre el modal, asignando valores por defecto (fecha = ayer, hora actual)
 const openModal = (evt = null) => {
   if (evt) {
     isEditing.value = true;
@@ -179,29 +211,27 @@ const openModal = (evt = null) => {
       title: "",
       start: defaultDate.value,
       time: now.toTimeString().substring(0, 5),
+      end: now.toTimeString().substring(0, 5),
       courseId: ""
     };
   }
   showModal.value = true;
 };
 
-// Cierra el modal y reinicia newEvent
 const closeModal = () => {
   showModal.value = false;
-  newEvent.value = { id: null, title: "", start: "", time: "", courseId: "" };
+  newEvent.value = { id: null, title: "", start: "", time: "", end: "", courseId: "" };
 };
 
-// Configuración de FullCalendar
 const calendarOptions = computed(() => ({
   plugins: [dayGridPlugin, interactionPlugin],
   initialView: "dayGridMonth",
   locale: "es",
   timeZone: "America/Lima",
-  editable: false, // No permite mover eventos
+  editable: false,
   selectable: true,
   events: events.value,
   eventDidMount: info => {
-    // Si el evento es manual (no proviene de un curso), aplica resaltado
     if (info.event.id && !info.event.id.startsWith("curso-")) {
       info.el.style.backgroundColor = "#cceeff";
       info.el.style.border = "2px solid #007acc";
@@ -221,21 +251,35 @@ watch(
   { deep: true }
 );
 
-// Filtra eventos programados para la fecha seleccionada en el modal
+// Computed para eventos programados en la fecha seleccionada
 const scheduledEvents = computed(() => {
   if (!newEvent.value.start) return [];
+  const selectedDate = new Date(newEvent.value.start + "T00:00:00");
   return events.value.filter(evt => {
     if (evt.daysOfWeek === undefined) {
       return evt.start.split("T")[0] === newEvent.value.start;
     }
-    const fecha = new Date(newEvent.value.start);
-    const inicio = new Date(evt.startRecur);
-    const fin = new Date(evt.endRecur);
-    return fecha >= inicio && fecha <= fin && evt.daysOfWeek.includes(fecha.getDay());
+    const startRecur = new Date(evt.startRecur + "T00:00:00");
+    const endRecur = new Date(evt.endRecur + "T00:00:00");
+    return selectedDate >= startRecur &&
+           selectedDate <= endRecur &&
+           evt.daysOfWeek.includes(selectedDate.getDay());
   });
 });
 
-// Modal de notificaciones
+const scheduledManualEvents = computed(() =>
+  scheduledEvents.value.filter(evt => evt.daysOfWeek === undefined)
+);
+const scheduledCourseEvents = computed(() =>
+  scheduledEvents.value.filter(evt => evt.daysOfWeek !== undefined)
+);
+
+// Convierte "HH:MM" a minutos
+const toMinutes = (timeStr) => {
+  const [hours, minutes] = timeStr.split(":").map(Number);
+  return hours * 60 + minutes;
+};
+
 const showMessageModal = ref(false);
 const messageTitle = ref("");
 const messageContent = ref("");
@@ -261,65 +305,54 @@ const confirmConflict = async () => {
 };
 const cancelConflict = () => { showConflictConfirm.value = false; };
 
-// Guarda o actualiza el evento en Firebase
-const proceedSaveEvent = async () => {
+// Función para enviar notificación por email
+const enviarNotificacionEmail = async (evento) => {
   try {
-    if (isEditing.value) {
-      const index = manualEvents.value.findIndex(e => e.id === newEvent.value.id);
-      if (index !== -1) {
-        await updateDoc(doc(db, "eventos", newEvent.value.id), {
-          title: newEvent.value.title,
-          start: newEvent.value.start,
-          time: newEvent.value.time,
-          courseId: newEvent.value.courseId
-          // No se actualiza userId en la edición
-        });
-        manualEvents.value[index] = { ...newEvent.value };
-      }
-    } else {
-      // Al crear un nuevo evento, se añade userId del usuario actual
-      const currentUser = auth.currentUser;
-      await addDoc(collection(db, "eventos"), {
-        title: newEvent.value.title,
-        start: newEvent.value.start,
-        time: newEvent.value.time,
-        courseId: newEvent.value.courseId,
-        userId: currentUser ? currentUser.uid : null
-      }).then(docRef => {
-        manualEvents.value.push({
-          id: docRef.id,
-          title: newEvent.value.title,
-          start: newEvent.value.start,
-          time: newEvent.value.time,
-          courseId: newEvent.value.courseId,
-          userId: currentUser ? currentUser.uid : null
-        });
-      });
+    const email = auth.currentUser ? auth.currentUser.email : "";
+    if (!email) return; // Si no hay correo, no se envía notificación.
+    const subject = `Recordatorio: Nuevo Evento "${evento.title}"`;
+    const text = `Se ha creado el evento "${evento.title}" para el ${evento.start} a las ${evento.time}.`;
+    const html = `<p>Se ha creado el evento <strong>${evento.title}</strong> para el <strong>${evento.start}</strong> a las <strong>${evento.time}</strong>.</p>`;
+    const response = await fetch("http://localhost:3000/send-notification", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ to: email, subject, text, html }),
+    });
+    const result = await response.json();
+    if (!result.success) {
+      console.error("Error enviando notificación:", result.error);
     }
-    closeModal();
-  } catch (error) {
-    console.error("Error guardando el evento:", error);
-    showMessage("Error", "Ocurrió un error al guardar el evento. Inténtalo de nuevo.");
+  } catch (err) {
+    console.error("Error en envío de notificación:", err);
   }
 };
 
-// Valida y guarda el evento
+// Validación y guardado del evento
 const saveEvent = async () => {
-  if (!newEvent.value.start || !newEvent.value.time) {
+  if (!newEvent.value.start || !newEvent.value.time || !newEvent.value.end) {
     showMessage("Aviso", "Por favor, completa todos los campos.");
     return;
   }
-  // Si no hay título y se ha seleccionado un curso, se genera un título automáticamente
-  if (!newEvent.value.title && newEvent.value.courseId) {
-    const selected = courses.value.find(c => c.id === newEvent.value.courseId);
-    newEvent.value.title = selected ? `${selected.nombre} - ${selected.seccion}` : "";
+  if (!newEvent.value.title) {
+    showMessage("Aviso", "El título del evento es obligatorio.");
+    return;
   }
-  // Verifica si ya existe un evento en la misma fecha y hora (conflicto)
-  const conflict = manualEvents.value.find(e =>
-    e.start === newEvent.value.start &&
-    e.time === newEvent.value.time &&
-    (!isEditing.value || e.id !== newEvent.value.id)
-  );
+  if (toMinutes(newEvent.value.end) <= toMinutes(newEvent.value.time)) {
+    showMessage("Aviso", "La hora de fin debe ser posterior a la hora de inicio.");
+    return;
+  }
+  const newStart = toMinutes(newEvent.value.time);
+  const newEnd = toMinutes(newEvent.value.end);
+  const conflict = scheduledEvents.value.find(evt => {
+    if (isEditing.value && evt.id === newEvent.value.id) return false;
+    const evtStart = toMinutes(evt.time);
+    if (evt.end) {
+      const evtEnd = toMinutes(evt.end.split("T")[1]);
+      return newStart < evtEnd && evtStart < newEnd;
+    } else {
+      return evt.time === newEvent.value.time;
+    }
+  });
   if (conflict) {
     showConflictConfirm.value = true;
     return;
@@ -327,7 +360,53 @@ const saveEvent = async () => {
   await proceedSaveEvent();
 };
 
-// Al hacer clic en un evento manual, abre el modal de edición
+const proceedSaveEvent = async () => {
+  try {
+    let savedEvent;
+    if (isEditing.value) {
+      const index = manualEvents.value.findIndex(e => e.id === newEvent.value.id);
+      if (index !== -1) {
+        await updateDoc(doc(db, "eventos", newEvent.value.id), {
+          title: newEvent.value.title,
+          start: newEvent.value.start,
+          time: newEvent.value.time,
+          end: newEvent.value.end,
+          courseId: newEvent.value.courseId
+        });
+        manualEvents.value[index] = { ...newEvent.value };
+        savedEvent = { ...newEvent.value };
+      }
+    } else {
+      const currentUser = auth.currentUser;
+      const docRef = await addDoc(collection(db, "eventos"), {
+        title: newEvent.value.title,
+        start: newEvent.value.start,
+        time: newEvent.value.time,
+        end: newEvent.value.end,
+        courseId: newEvent.value.courseId,
+        userId: currentUser ? currentUser.uid : null
+      });
+      savedEvent = {
+        id: docRef.id,
+        title: newEvent.value.title,
+        start: newEvent.value.start,
+        time: newEvent.value.time,
+        end: newEvent.value.end,
+        courseId: newEvent.value.courseId,
+        userId: currentUser ? currentUser.uid : null
+      };
+      manualEvents.value.push(savedEvent);
+    }
+    closeModal();
+    await loadEvents();
+    // Enviar notificación por email luego de guardar el evento
+    enviarNotificacionEmail(savedEvent);
+  } catch (error) {
+    console.error("Error guardando el evento:", error);
+    showMessage("Error", "Ocurrió un error al guardar el evento. Inténtalo de nuevo.");
+  }
+};
+
 const handleEventClick = info => {
   const evt = manualEvents.value.find(e => e.id === info.event.id);
   if (!evt) {
@@ -337,7 +416,6 @@ const handleEventClick = info => {
   openModal(evt);
 };
 
-// Elimina el evento seleccionado
 const confirmDelete = async () => {
   if (!newEvent.value.id) return;
   try {
@@ -345,6 +423,7 @@ const confirmDelete = async () => {
     manualEvents.value = manualEvents.value.filter(e => e.id !== newEvent.value.id);
     closeModal();
     closeDeleteConfirm();
+    await loadEvents();
   } catch (error) {
     console.error("Error eliminando el evento:", error);
     showMessage("Error", "Ocurrió un error al eliminar el evento.");
@@ -352,7 +431,6 @@ const confirmDelete = async () => {
   }
 };
 
-// Procesa la carga de un archivo Excel y agrega eventos manuales
 const handleFileUpload = event => {
   const file = event.target.files[0];
   if (!file) return;
@@ -369,6 +447,7 @@ const handleFileUpload = event => {
             title: row.Título,
             start: row.Fecha,
             time: row.Hora,
+            end: row.HoraFin || "",
             courseId: "",
             userId: auth.currentUser ? auth.currentUser.uid : null
           }).then(docRef => {
@@ -377,12 +456,14 @@ const handleFileUpload = event => {
               title: row.Título,
               start: row.Fecha,
               time: row.Hora,
+              end: row.HoraFin || "",
               courseId: "",
               userId: auth.currentUser ? auth.currentUser.uid : null
             });
           });
         }
       }
+      await loadEvents();
     } catch (error) {
       console.error("Error procesando el archivo:", error);
       showMessage("Error", "Ocurrió un error al procesar el archivo. Verifica el formato.");
@@ -391,7 +472,6 @@ const handleFileUpload = event => {
   reader.readAsArrayBuffer(file);
 };
 
-// Carga eventos desde Firebase filtrados por el usuario actual
 const loadEvents = async () => {
   isLoading.value = true;
   try {
@@ -408,7 +488,6 @@ const loadEvents = async () => {
   }
 };
 
-// Carga cursos desde Firebase filtrados por el usuario actual
 const loadCourses = async () => {
   try {
     const currentUser = auth.currentUser;
@@ -442,103 +521,89 @@ defineExpose({
 });
 </script>
 
+ 
 <style scoped>
-/* ======================
-Estilos Generales
-========================= */
+/* Variables de color */
+:root {
+  --primary-color: #00509e;
+  --secondary-color: #003366;
+  --light-bg: #eef2f7;
+  --medium-bg: #dde6f0;
+  --white: #ffffff;
+}
+
+/* Global */
 body, html {
   margin: 0;
   padding: 0;
   font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-  background: #eef2f7;
+  background: var(--light-bg);
 }
 
-/* ======================
-Encabezado
-========================= */
+/* Encabezado */
 .header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  background: linear-gradient(135deg, #003366, #00509e);
-  color: white;
+  background: linear-gradient(135deg, var(--secondary-color), var(--primary-color));
+  color: var(--white);
   padding: 20px;
   border-radius: 10px;
-  box-shadow: 0 4px 10px rgba(0,0,0,0.25);
-  position: sticky;
-  top: 0;
-  z-index: 1000;
+  box-shadow: 0 6px 12px rgba(0,0,0,0.3);
+  text-align: center;
+  margin-bottom: 20px;
 }
-
 .header h1 {
+  font-size: 2.2rem;
   margin: 0;
-  font-size: 1.8rem;
   display: flex;
   align-items: center;
+  justify-content: center;
 }
-
 .header h1 i {
-  font-size: 2rem;
+  font-size: 2.2rem;
   margin-right: 10px;
 }
 
-/* ======================
-Acciones en el Encabezado
-========================= */
+/* Acciones del Encabezado */
 .actions {
+  margin-top: 15px;
   display: flex;
-  gap: 12px;
+  justify-content: center;
+  gap: 15px;
 }
-
 .add-event-btn {
-  background: linear-gradient(135deg, #00509e, #003366);
-  color: white;
+  background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+  color: var(--white);
   border: none;
-  padding: 12px 20px;
+  padding: 14px 22px;
   border-radius: 8px;
   cursor: pointer;
   font-weight: bold;
-  transition: transform 0.3s ease-in-out, background 0.3s ease-in-out;
+  transition: transform 0.3s ease, background 0.3s ease;
   box-shadow: 0 4px 8px rgba(0,0,0,0.3);
   display: flex;
   align-items: center;
 }
-
 .add-event-btn i {
-  font-size: 1.5rem;
-  margin-right: 6px;
+  font-size: 1.6rem;
+  margin-right: 8px;
 }
-
 .add-event-btn:hover {
-  background: linear-gradient(135deg, #003366, #00509e);
+  background: linear-gradient(135deg, var(--secondary-color), var(--primary-color));
   transform: scale(1.05);
 }
-
 .file-input {
+  padding: 10px 16px;
   border: 1px solid #ccc;
-  padding: 8px 12px;
   border-radius: 6px;
   cursor: pointer;
-  font-size: 14px;
+  font-size: 0.9rem;
 }
 
-/* ======================
-Calendario
-========================= */
+/* Calendario */
 .custom-calendar {
   margin: 20px 0;
 }
 
-/* Resalta los eventos manuales con fondo celeste, borde azul y texto oscuro */
-.fc-event.manual-event {
-  background-color: #cceeff !important;
-  border: 2px solid #007acc !important;
-  color: #003366 !important;
-}
-
-/* ======================
-Modal
-========================= */
+/* Modal Overlay */
 .modal-overlay {
   position: fixed;
   top: 0;
@@ -550,61 +615,55 @@ Modal
   justify-content: center;
   align-items: center;
   z-index: 1000;
-  animation: fadeIn 0.3s ease-in-out;
+  animation: fadeInModal 0.3s ease;
 }
-
-@keyframes fadeIn {
+@keyframes fadeInModal {
   from { opacity: 0; }
   to { opacity: 1; }
 }
 
+/* Modal Content */
 .modal-content {
-  background: #fff;
+  background: var(--white);
   padding: 24px;
   border-radius: 12px;
   width: 90%;
-  max-width: 450px;
-  box-shadow: 0 8px 20px rgba(0,0,0,0.2);
+  max-width: 500px;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.2);
   text-align: center;
-  border: 2px solid #00509e;
-  animation: slideIn 0.3s ease-in-out;
+  border: 2px solid var(--primary-color);
+  animation: popIn 0.3s ease;
 }
-
-@keyframes slideIn {
-  from { transform: translateY(-20px); }
-  to { transform: translateY(0); }
+@keyframes popIn {
+  from { transform: scale(0.8); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
 }
-
 .modal-title {
-  font-size: 1.6rem;
+  font-size: 1.7rem;
   font-weight: bold;
-  color: #003366;
+  color: var(--secondary-color);
   margin-bottom: 20px;
 }
-
 .modal-content input,
 .modal-content select {
   width: 100%;
   padding: 12px;
-  margin: 10px 0;
+  margin: 12px 0;
   border-radius: 8px;
   border: 1px solid #ccc;
   font-size: 1rem;
   transition: border 0.3s;
 }
-
 .modal-content input:focus,
 .modal-content select:focus {
-  border-color: #00509e;
+  border-color: var(--primary-color);
   outline: none;
 }
-
 .modal-buttons {
   display: flex;
   justify-content: space-around;
   margin-top: 20px;
 }
-
 .save-btn,
 .delete-btn,
 .cancel-btn {
@@ -612,83 +671,75 @@ Modal
   border-radius: 8px;
   font-weight: bold;
   cursor: pointer;
-  transition: transform 0.3s ease-in-out, background 0.3s ease-in-out;
+  transition: transform 0.3s ease, background 0.3s ease;
   display: flex;
   align-items: center;
 }
-
 .save-btn {
-  background: #00509e;
-  color: white;
+  background: var(--primary-color);
+  color: var(--white);
 }
-
 .save-btn:hover {
-  background: #003366;
+  background: var(--secondary-color);
   transform: scale(1.05);
 }
-
 .delete-btn {
   background: #dc3545;
-  color: white;
+  color: var(--white);
 }
-
 .delete-btn:hover {
   background: #c82333;
   transform: scale(1.05);
 }
-
 .cancel-btn {
   background: #6c757d;
-  color: white;
+  color: var(--white);
 }
-
 .cancel-btn:hover {
   background: #5a6268;
   transform: scale(1.05);
 }
 
-/* ======================
-Lista de Cursos
-========================= */
-.cursos-list {
-  list-style: none;
-  padding: 0 10px;
-}
-
-.curso-item {
+/* Scheduled events */
+.scheduled-events {
+  background: #f9f9f9;
   padding: 12px;
-  margin-bottom: 8px;
-  font-size: 16px;
-  display: flex;
-  flex-direction: column;
-  background: #e6f0ff;
-  border-radius: 5px;
-  box-shadow: 0px 2px 5px rgba(0,0,0,0.1);
-  transition: transform 0.2s ease-in-out;
+  border-radius: 8px;
+  margin-top: 20px;
+  text-align: left;
+}
+.scheduled-events h3 {
+  margin-top: 0;
+  font-size: 1.3rem;
+  color: var(--secondary-color);
+}
+.scheduled-events h4 {
+  margin: 8px 0 4px;
+  font-size: 1.1rem;
+  color: var(--primary-color);
+}
+.scheduled-events ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.scheduled-events li {
+  padding: 4px 0;
+  font-size: 0.95rem;
+  color: #333;
 }
 
-.curso-item:hover {
-  transform: scale(1.03);
-}
-
-.curso-actions {
-  margin-top: 8px;
-  display: flex;
-  gap: 8px;
-}
-
-/* ======================
-Subida de Archivo
-========================= */
-.file-upload-section {
-  margin-top: 15px;
-  padding: 0 10px;
-}
-
-.error-message {
-  color: #dc3545;
-  font-weight: bold;
-  text-align: center;
-  margin-top: 10px;
+/* Responsive */
+@media (max-width: 768px) {
+  .header h1 {
+    font-size: 1.8rem;
+  }
+  .add-event-btn, .file-input {
+    font-size: 0.8rem;
+    padding: 8px 12px;
+  }
+  .modal-content {
+    padding: 16px;
+  }
 }
 </style>
