@@ -1,14 +1,15 @@
 {
-    "functions": {
-      "api/notify.js": {
-        "runtime": "nodejs18.x"
-      }
-    },
-    "crons": [
-      {
-        "path": "/api/notify",
-        "schedule": "0 0 1 * *" 
-      }
-    ]
-  }
+  "functions": {
+    "api/notify.js": {
+      "runtime": "nodejs18.x"
+    }
+  },
+  "crons": [
+    {
+      "path": "/api/notify",
+      "schedule": "0 0 1 * *"
+    }
+  ]
+}
+
   
