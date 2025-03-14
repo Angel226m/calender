@@ -571,7 +571,7 @@ body, html {
 }
 .add-event-btn {
   background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
-  color: var(--white);
+  color: #fff;
   border: none;
   padding: 14px 22px;
   border-radius: 8px;
